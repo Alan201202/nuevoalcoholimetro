@@ -65,7 +65,7 @@ def main():
         num_faces=1
     )
     detector = vision.FaceLandmarker.create_from_options(options)
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
 
     calibrator = Calibrator(calibration_time=CALIBRATION_TIME_SEC)
     calibrator.start()

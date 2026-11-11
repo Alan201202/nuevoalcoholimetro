@@ -4,13 +4,14 @@ import cv2
 import time
 import urllib.request
 import os
+import json
 import numpy as np
 import pandas as pd
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-# Importaciones del backend
+# Importaciones de los módulos del backend
 from src.config import (
     LEFT_EYE, 
     RIGHT_EYE, 
@@ -27,28 +28,100 @@ from src.utils.data_logger import DataLogger
 
 # Configuración de página de Streamlit
 st.set_page_config(
-    page_title="Dashboard Biométrico Oculomotor",
+    page_title="Sistema Biométrico de Sobriedad - IPN ESIME",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS personalizados para Dashboard Médico / Biométrico
+# CSS Personalizado: Ajuste para evitar Scroll + Estética Orgánica Propietaria
 st.markdown("""
 <style>
-    .main { background-color: #0e1117; }
-    .stMetric {
-        background-color: #1e222d;
-        padding: 12px;
-        border-radius: 8px;
-        border: 1px solid #2e364f;
+    /* Eliminación de relleno para fijar la cámara arriba sin scroll */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 100% !important;
     }
-    .status-card {
-        padding: 15px;
-        border-radius: 8px;
-        background-color: #1e222d;
-        border-left: 5px solid #00d26a;
-        margin-bottom: 15px;
+    
+    .stApp {
+        background-color: #090d11;
+        color: #d1d5db;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Panel Lateral */
+    section[data-testid="stSidebar"] {
+        background-color: #111822 !important;
+        border-right: 1px solid #1f293d;
+    }
+
+    /* Tarjetas Orgánicas de Métricas */
+    .bio-panel {
+        background-color: #111822;
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+    
+    .bio-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    
+    .bio-val {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #f8fafc;
+    }
+
+    /* Píldoras de Estado */
+    .tag-ok {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .tag-warn {
+        background-color: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        border: 1px solid rgba(245, 158, 11, 0.25);
+    }
+    .tag-danger {
+        background-color: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+
+    /* Encabezado Principal */
+    .title-header {
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: #f8fafc;
+        margin-bottom: 0px;
+    }
+    .subtitle-header {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin-bottom: 12px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -76,62 +149,57 @@ def get_hgn_target_position(elapsed, w, h):
     if cycle_time < 3.0:
         ratio = cycle_time / 3.0
         cx = int(min_x + ratio * range_x)
-        stage = "Persecución Suave (Der)"
+        stage = "Persecución Suave (Derecha)"
     elif cycle_time < 5.0:
         cx = max_x
-        stage = "Fijación Extrema (Der)"
+        stage = "Fijación Extrema (Derecha)"
     elif cycle_time < 8.0:
         ratio = (cycle_time - 5.0) / 3.0
         cx = int(max_x - ratio * range_x)
-        stage = "Persecución Suave (Izq)"
+        stage = "Persecución Suave (Izquierda)"
     else:
         cx = min_x
-        stage = "Fijación Extrema (Izq)"
+        stage = "Fijación Extrema (Izquierda)"
 
     return cx, center_y, stage
 
-def get_eval_tag(val, norm_max, warn_max):
+def get_tag_html(val, norm_max, warn_max):
     if val <= norm_max:
-        return "OK (Normal)"
+        return '<span class="tag-ok">NORMAL</span>'
     elif val <= warn_max:
-        return "PRECAUCIÓN"
+        return '<span class="tag-warn">PRECAUCIÓN</span>'
     else:
-        return "ALTERADO"
+        return '<span class="tag-danger">ALTERADO</span>'
 
-# --- ENCABEZADO Y CONTROL ---
-st.title("👁️ Dashboard Biométrico de Evaluación Oculomotora")
-st.caption("Sistema en tiempo real para análisis de nistagmo (HGN), dinámica palpebral y estabilidad cefálica.")
+# --- ENCABEZADO COMPACTO DE TESIS ---
+st.markdown('<div class="title-header">Prototipo para Evaluación de Sobriedad Usando un Método No Invasivo</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle-header">Plataforma de Análisis Biométrico Oculomotor y Postural en Tiempo Real &nbsp;|&nbsp; IPN - ESIME Zacatenco</div>', unsafe_allow_html=True)
 
-st.sidebar.header("🕹️ Panel de Control")
+# Panel Lateral
+st.sidebar.markdown("### Control del Protocolo")
+st.sidebar.caption("Prueba de Estímulo HGN (30 Segundos)")
+start_button = st.sidebar.button("▶️ Iniciar Evaluación", type="primary", use_container_width=True)
 st.sidebar.markdown("---")
-start_button = st.sidebar.button("▶️ Iniciar Evaluación (30s)", type="primary", use_container_width=True)
-st.sidebar.info("💡 **Instrucciones:** Mantenga su rostro frente a la cámara y siga con la mirada la esfera roja sin mover la cabeza.")
+st.sidebar.markdown("""
+**Información de Autoría:**
+* **Autores:** Alan Zaid Murillo Luna & Jesica Noemi Serralde Huertas
+* **Asesor:** M. en C. Armando Martínez Ríos
+* **Institución:** IPN - ESIME Zacatenco
+""")
 
 if start_button:
-    # Disposición en dos columnas para el Dashboard principal
-    col_cam, col_metrics = st.columns([2, 1])
+    # Distribución en 2 columnas para mantener la cámara centrada arriba
+    col_cam, col_info = st.columns([2.2, 1.0])
 
     with col_cam:
-        st.subheader("📹 Captura y Seguimiento Ocular")
         frame_placeholder = st.empty()
-        status_box = st.empty()
 
-    with col_metrics:
-        st.subheader("⚡ Métricas en Tiempo Real")
-        m_perclos = st.metric("PERCLOS", "0.0%", delta_color="normal")
-        m_bpm = st.metric("Frecuencia Parpadeo (BPM)", "0.0")
-        m_jitter = st.metric("Nistagmo (Gaze Jitter)", "0.00000")
-        m_pitch = st.metric("Inestabilidad Cefálica", "0.00°")
-        
-        st.markdown("**Nivel de Deterioro Integrado**")
-        risk_bar = st.progress(0)
+    with col_info:
+        status_card = st.empty()
+        risk_metric = st.empty()
+        stage_card = st.empty()
 
-    # Contenedor para la gráfica en vivo
-    st.divider()
-    st.subheader("📈 Monitoreo Temporal Continuo")
-    chart_placeholder = st.empty()
-
-    # Inicialización del pipeline
+    # Inicialización del Pipeline
     base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
     options = vision.FaceLandmarkerOptions(
         base_options=base_options,
@@ -140,7 +208,7 @@ if start_button:
         num_faces=1
     )
     detector = vision.FaceLandmarker.create_from_options(options)
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
 
     calibrator = Calibrator(calibration_time=CALIBRATION_TIME_SEC)
     calibrator.start()
@@ -165,16 +233,13 @@ if start_button:
     history_bpm = []
     history_pitch_std = []
 
-    # Buffers para gráficas en vivo
-    df_chart = pd.DataFrame(columns=["PERCLOS (%)", "Nistagmo (x1000)"])
-
     test_started = False
     test_start_time = 0.0
 
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
-            st.error("Error al acceder a la fuente de video.")
+            st.error("No se detectó señal de la cámara.")
             break
 
         frame = cv2.flip(frame, 1)
@@ -197,7 +262,16 @@ if start_button:
 
             if not is_calibrated:
                 remaining_calib = int(CALIBRATION_TIME_SEC - calib_val) + 1
-                status_box.warning(f"⏳ **Calibrando línea base... ({remaining_calib}s)** Fijar mirada al frente.")
+                status_card.markdown(f"""
+                <div class="bio-panel">
+                    <div class="bio-label">Estado del Protocolo</div>
+                    <div style="color:#00e5ff; font-weight:600;">Calibrando Línea Base ({remaining_calib}s)</div>
+                    <div style="font-size:0.8rem; color:#64748b; margin-top:4px;">Mantenga la mirada fija al centro.</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Overlay en frame durante calibración
+                cv2.putText(frame, f"CALIBRANDO: {remaining_calib}s", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 229, 255), 2)
             else:
                 if not test_started:
                     test_started = True
@@ -241,21 +315,6 @@ if start_button:
                 history_heur.append(p_heur)
                 history_final.append(prob_deterioro)
 
-                # Actualizar dashboard dinámico
-                m_perclos.metric("PERCLOS", f"{feats['PERCLOS']:.1f}%")
-                m_bpm.metric("Frecuencia Parpadeo (BPM)", f"{feats['BPM']:.1f}")
-                m_jitter.metric("Nistagmo (Gaze Jitter)", f"{gaze_jitter:.5f}")
-                m_pitch.metric("Inestabilidad Cefálica", f"{feats['Pitch_STD']:.2f}°")
-                risk_bar.progress(int(min(max(prob_deterioro, 0.0), 1.0) * 100))
-
-                # Actualizar gráfica
-                new_row = pd.DataFrame({
-                    "PERCLOS (%)": [feats['PERCLOS']],
-                    "Nistagmo (x1000)": [gaze_jitter * 1000]
-                })
-                df_chart = pd.concat([df_chart, new_row], ignore_index=True).tail(50)
-                chart_placeholder.line_chart(df_chart)
-
                 if time.time() - last_log_time >= 1.0:
                     logger.log(
                         current_ear, feats['PERCLOS'], feats['BPM'], feats['Mean_EAR'], 
@@ -264,11 +323,36 @@ if start_button:
                     last_log_time = time.time()
 
                 cx, cy, stage_name = get_hgn_target_position(elapsed_test, w, h)
-                status_box.info(f"🎯 **Fase HGN:** {stage_name} | ⏱️ **Tiempo:** {remaining_test}s")
 
-                # Estímulo de movimiento en la cámara
-                cv2.circle(frame, (cx, cy), 14, (0, 0, 255), -1)
-                cv2.circle(frame, (cx, cy), 5, (255, 255, 255), -1)
+                # Información simplificada en el lateral (Sin saturar la pantalla)
+                status_card.markdown(f"""
+                <div class="bio-panel">
+                    <div class="bio-label">Tiempo Restante de Prueba</div>
+                    <div class="bio-val">{remaining_test} <span style="font-size:0.9rem; color:#64748b;">segundos</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                risk_metric.markdown(f"""
+                <div class="bio-panel">
+                    <div class="bio-label">Deterioro Estimado (Tiempo Real)</div>
+                    <div class="bio-val" style="color:{'#ef4444' if prob_deterioro>=0.5 else '#f59e0b' if prob_deterioro>=0.2 else '#10b981'}">{prob_deterioro*100:.1f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                stage_card.markdown(f"""
+                <div class="bio-panel">
+                    <div class="bio-label">Fase Estímulo HGN</div>
+                    <div style="font-size:0.95rem; font-weight:600; color:#f8fafc;">{stage_name}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Superposición del estímulo HGN e indicadores sutiles en la cámara
+                cv2.circle(frame, (cx, cy), 12, (0, 0, 238), -1)
+                cv2.circle(frame, (cx, cy), 3, (255, 255, 255), -1)
+                
+                # Retícula sutil tipo visor biométrico
+                cv2.line(frame, (int(w/2) - 15, int(h/2)), (int(w/2) + 15, int(h/2)), (255, 255, 255), 1)
+                cv2.line(frame, (int(w/2), int(h/2) - 15), (int(w/2), int(h/2) + 15), (255, 255, 255), 1)
 
                 if elapsed_test >= TEST_DURATION_SEC:
                     break
@@ -278,9 +362,8 @@ if start_button:
 
     cap.release()
     frame_placeholder.empty()
-    status_box.success("🎉 **Evaluación biométrica finalizada.** Generando informe...")
 
-    # --- DESPLIEGUE DEL INFORME FINAL ---
+    # --- REPORTE FINAL DESPLEGABLE TRAS LA PRUEBA ---
     if history_final:
         fps_approx = 30
         sec_heur = [np.mean(history_heur[i:i+fps_approx]) for i in range(0, len(history_heur), fps_approx)]
@@ -292,59 +375,95 @@ if start_button:
         avg_final = np.mean(sec_final) * 100
 
         peak_p85 = np.percentile(sec_final, 85) * 100
-        seconds_severe = sum(1 for s in sec_final if s >= 0.70)
-        seconds_warning = sum(1 for s in sec_final if 0.35 <= s < 0.70)
+        seconds_severe = sum(1 for s in sec_final if s >= 0.50)
+        seconds_warning = sum(1 for s in sec_final if 0.20 <= s < 0.50)
 
         mean_jitter = np.mean(history_jitter) if history_jitter else 0.0
         mean_perclos = np.mean(history_perclos) if history_perclos else 0.0
         mean_bpm = np.mean(history_bpm) if history_bpm else 0.0
         mean_pitch_std = np.mean(history_pitch_std) if history_pitch_std else 0.0
 
-        st.divider()
-        st.subheader("📊 Reporte Consolidado por Motores Biométricos")
+        st.markdown("---")
+        st.subheader(" Reporte de Indicadores Biométricos Consolidados")
 
-        table_data = [
-            {
-                "Eje de Evaluación": "1. Oculomotor (Nistagmo)",
-                "Medición": f"{mean_jitter:.5f}",
-                "Rango Fisiológico Normal": "0.0001 - 0.0035",
-                "Diagnóstico": get_eval_tag(mean_jitter, 0.0035, 0.0065)
-            },
-            {
-                "Eje de Evaluación": "2. Palpebral (PERCLOS)",
-                "Medición": f"{mean_perclos:.1f}%",
-                "Rango Fisiológico Normal": "0.0% - 15.0%",
-                "Diagnóstico": get_eval_tag(mean_perclos, 15.0, 30.0)
-            },
-            {
-                "Eje de Evaluación": "3. Dinámica de Parpadeo (BPM)",
-                "Medición": f"{mean_bpm:.1f}",
-                "Rango Fisiológico Normal": "10 - 25 BPM",
-                "Diagnóstico": "OK (Normal)" if 10 <= mean_bpm <= 25 else "FUERA DE RANGO"
-            },
-            {
-                "Eje de Evaluación": "4. Estabilidad Postural (Pitch)",
-                "Medición": f"{mean_pitch_std:.2f}°",
-                "Rango Fisiológico Normal": "0.00° - 3.00°",
-                "Diagnóstico": get_eval_tag(mean_pitch_std, 3.0, 6.0)
-            }
-        ]
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown(f"""
+            <div class="bio-panel">
+                <div class="bio-label">[MOD-B] Nistagmo (Jitter)</div>
+                <div class="bio-val">{mean_jitter:.4f}</div>
+                <div style="margin-top:8px;">{get_tag_html(mean_jitter, 0.0035, 0.0065)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with c2:
+            st.markdown(f"""
+            <div class="bio-panel">
+                <div class="bio-label">[MOD-A] Oclusión PERCLOS</div>
+                <div class="bio-val">{mean_perclos:.1f}%</div>
+                <div style="margin-top:8px;">{get_tag_html(mean_perclos, 15.0, 30.0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        st.dataframe(pd.DataFrame(table_data), use_container_width=True)
+        with c3:
+            st.markdown(f"""
+            <div class="bio-panel">
+                <div class="bio-label">[MOD-A] Parpadeo (BPM)</div>
+                <div class="bio-val">{mean_bpm:.1f}</div>
+                <div style="margin-top:8px;">{"<span class='tag-ok'>NORMAL</span>" if 10 <= mean_bpm <= 25 else "<span class='tag-warn'>FUERA DE RANGO</span>"}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        st.subheader("🔢 Índices de Evaluación Integrados")
-        r_col1, r_col2, r_col3, r_col4 = st.columns(4)
-        r_col1.metric("Índice Biomecánico (Reglas)", f"{avg_heur:.1f}%")
-        r_col2.metric("Índice Estadístico (ML)", f"{avg_ml:.1f}%")
-        r_col3.metric("Índice Final Integrado", f"{avg_final:.1f}%")
-        r_col4.metric("Severidad Sostenida (P85)", f"{peak_p85:.1f}%")
+        with c4:
+            st.markdown(f"""
+            <div class="bio-panel">
+                <div class="bio-label">[MOD-C] Estabilidad Pitch</div>
+                <div class="bio-val">{mean_pitch_std:.2f}°</div>
+                <div style="margin-top:8px;">{get_tag_html(mean_pitch_std, 3.0, 6.0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        st.divider()
-        st.subheader("🏁 Dictamen Técnico Final")
+        st.markdown("###  Evaluación Comparativa de Inferencia")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Reglas Biomecánicas (65%)", f"{avg_heur:.1f}%")
+        m2.metric("Random Forest ML (35%)", f"{avg_ml:.1f}%")
+        m3.metric("Índice Integrado Promedio", f"{avg_final:.1f}%")
+        m4.metric("Severidad Sostenida (P85)", f"{peak_p85:.1f}%")
 
-        if peak_p85 >= 65.0 or seconds_severe >= 3:
-            st.error("🔴 **[ ESTADO: ALTO RIESGO / DETERIORO SEVERO ]**\n\n**Criterio:** Alteraciones oculomotoras significativas detectadas en la prueba de seguimiento HGN o inestabilidad postural crítica.")
-        elif peak_p85 >= 35.0 or seconds_warning >= 5:
-            st.warning("🟠 **[ ESTADO: PRECAUCIÓN / ANOMALÍA LEVE ]**\n\n**Criterio:** Leves variaciones registradas en el control de fijación ocular o fatiga palpebral moderada.")
+        st.markdown("###  Curva Temporal de Coordinación Visual (30 Segundos)")
+        df_chart = pd.DataFrame({
+            "Segundo": np.arange(1, len(sec_final) + 1),
+            "Nivel de Deterioro (%)": np.array(sec_final) * 100
+        }).set_index("Segundo")
+        st.line_chart(df_chart)
+
+        st.markdown("###  Dictamen Técnico Final")
+        if peak_p85 >= 50.0 or seconds_severe >= 3:
+            st.error("🔴 **[ DICTAMEN: ALTO RIESGO / DETERIORO SEVERO ]**\n\n**Fundamento Fisiológico:** Alteración en el seguimiento nistágmico HGN o desaceleración palpebral fuera de norma.")
+        elif peak_p85 >= 20.0 or seconds_warning >= 5:
+            st.warning("🟠 **[ DICTAMEN: PRECAUCIÓN / ANOMALÍA LEVE ]**\n\n**Fundamento Fisiológico:** Inestabilidad moderada en la fijación visual o ligeras variaciones en la postura.")
         else:
-            st.success("🟢 **[ ESTADO: SOBRIO / DESEMPEÑO NORMAL ]**\n\n**Criterio:** Todos los indicadores biométricos se mantuvieron dentro de los parámetros fisiológicos estándar.")
+            st.success("🟢 **[ DICTAMEN: SOBRIO / DESEMPEÑO NORMAL ]**\n\n**Fundamento Fisiológico:** Todas las métricas de coordinación ocular y estabilidad se mantuvieron en parámetros fisiológicos normales.")
+
+        report_data = {
+            "titulo_tesis": "Prototipo para evaluación de sobriedad usando un método no invasivo",
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "metricas": {
+                "gaze_jitter": round(mean_jitter, 5),
+                "perclos": round(mean_perclos, 2),
+                "bpm": round(mean_bpm, 1),
+                "pitch_std": round(mean_pitch_std, 2)
+            },
+            "puntuaciones": {
+                "score_reglas": round(avg_heur, 2),
+                "score_ml": round(avg_ml, 2),
+                "score_final": round(avg_final, 2),
+                "severidad_p85": round(peak_p85, 2)
+            }
+        }
+        st.download_button(
+            label=" Descargar Reporte Biométrico (JSON)",
+            data=json.dumps(report_data, indent=4),
+            file_name=f"reporte_sobriedad_{int(time.time())}.json",
+            mime="application/json"
+        )
